@@ -2,12 +2,8 @@
 # https://huggingface.co/M-CLIP/XLM-Roberta-Large-Vit-L-14
 
 from PIL import Image
-import requests
-from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel
-import transformers
-from multilingual_clip import pt_multilingual_clip
+from transformers import CLIPProcessor, CLIPModel
 import torch
-import glob
 import pandas as pd
 from  tqdm import tqdm
 from pathlib import Path
@@ -51,7 +47,8 @@ for fn in tqdm(path.rglob('*.*')):
 
 df = pd.DataFrame(zip(paths, feats), columns=['path', 'features'])
 
-df.to_pickle(str(path).replace('/', '-')+'.pickle')
+fname = str(path).replace('/', '-') + '_' + model_name.split('/')[-1]
+df.to_pickle(fname +'.pickle')
 
 
 

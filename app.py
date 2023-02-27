@@ -1,40 +1,77 @@
-
 ####### Install dependencies #######
 # pip install spacy ftfy==4.4.3
 # python -m spacy download en
 # conda install -c huggingface transformers==4.14.1 tokenizers==0.10.3 see:
 # https://discuss.huggingface.co/t/importing-tokenizers-version-0-10-3-fails-due-to-openssl/17820/3
+# pip install streamlit
+# pip install multilingual-clip
+
+### Multilingial CLIP model:
+# https://huggingface.co/M-CLIP/XLM-Roberta-Large-Vit-L-14
+# pip install transformers==4.8  #### this version or older is important to avoid an error when loading the model
 # pip install gradio
 
-import datetime
+# import datetime
 import gradio as gr
 
 from PIL import Image
-import requests
 
-from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel
+from transformers import CLIPProcessor, CLIPModel
+import transformers
+from multilingual_clip import pt_multilingual_clip
 import torch
-from torch import autocast
-import glob
-from functools import partial
 from pathlib import Path
 import pandas as pd
-import numpy as np
 from  tqdm import tqdm
 tqdm.pandas()
 
-path = Path('images')
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# global last_multiling_chkbx, multiling
+# last_multiling_chkbx = None 
+# multiling = True
 
-model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-model.to(device)
-processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-df = pd.read_pickle(str(path).replace('/', '-')+'.pickle')
-img_embs = torch.stack(df.features.values.tolist())[:, -1, :].t().to(device)
-logit_scale = model.logit_scale.exp()
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   # There is a bug when using gpu: tensors should be on the same device not on cuda:0 and cpu
+device = torch.device("cpu")
+
+class ClpModel:
+    def __init__(self, multiling = True):
+        self.multiling = multiling
+        self.model = None
+        self.processor = None
+        self.img_embs = None
+        self.logit_scale = None
+        self.last_multiling_chkbx = None 
+        self.df = None
+        
+    def load_model_and_emb(self, multiling = True):
+        self.last_multiling_chkbx = multiling
+        path = Path('images')
+
+        if multiling:
+            model_name = 'M-CLIP/XLM-Roberta-Large-Vit-L-14'
+            img_emb_from_model = 'openai/clip-vit-large-patch14'
+        else:
+            model_name = "openai/clip-vit-base-patch32"   # preconfigured with image size = 224: https://huggingface.co/openai/clip-vit-base-patch32/blob/main/preprocessor_config.json
+            # model_name = "openai/clip-vit-large-patch14-336"  # preconfigured with image size = 336: https://huggingface.co/openai/clip-vit-large-patch14-336/blob/main/preprocessor_config.json
+            img_emb_from_model = model_name
+
+        # Load Model & Tokenizer
+        if multiling:
+            self.model = pt_multilingual_clip.MultilingualCLIP.from_pretrained(model_name)
+            self.processor = transformers.AutoTokenizer.from_pretrained(model_name)
+        else:
+            self.model = CLIPModel.from_pretrained(model_name)
+            self.processor = CLIPProcessor.from_pretrained(model_name)
+        self.model.to(device)
+
+        fname = str(path).replace('/', '-') + '_' + img_emb_from_model.split('/')[-1]
+        self.df = pd.read_pickle(fname + '.pickle')
+        self.img_embs = torch.stack(self.df.features.values.tolist())[:, -1, :].t().to(device)
+        self.logit_scale = self.model.logit_scale.exp() if not multiling else torch.tensor(100., dtype=torch.float32).to(device)
+
+MyClpModel = ClpModel()
 
 def compute_probs_and_sort(text_embeds, n):
-    preds = torch.matmul(text_embeds.detach(), img_embs) * logit_scale.detach()  # compute cosine similarity * 100 (100 is perfectly text matched to image)
+    preds = torch.matmul(text_embeds.detach(), MyClpModel.img_embs) * MyClpModel.logit_scale.detach()  # compute cosine similarity * 100 (100 is perfectly text matched to image)
     print(f'max, min cosine similarity of all images with the text prompt: {preds.max()} , {preds.min()}')
     sorted, indices = torch.sort(preds, descending=True)
     if device == 'cpu':
@@ -46,16 +83,27 @@ def compute_probs_and_sort(text_embeds, n):
     return probs, idxs
 
 
-def infer(prompt, img_cnt):
-    input_text = processor(text=[prompt], return_tensors="pt", padding=True).to(device)
-    output_text_features = model.get_text_features(**input_text)
+def infer(prompt, img_cnt, chkbx):
+    multiling = chkbx #.value
+    if multiling != MyClpModel.last_multiling_chkbx:
+        MyClpModel.load_model_and_emb(multiling)
+        # last_multiling_chkbx = multiling
+    # input_text = processor(text=[prompt], return_tensors="pt", padding=True).to(device)
+
+    if multiling:
+        output_text_features = MyClpModel.model.forward([prompt], MyClpModel.processor)
+    else:
+        input_text = MyClpModel.processor(text=[prompt], return_tensors="pt", padding=True).to(device)
+        output_text_features = MyClpModel.model.get_text_features(**input_text)
     text_embeds = output_text_features / output_text_features.norm(p=2, dim=-1, keepdim=True)  
     probs, idxs = compute_probs_and_sort(text_embeds, img_cnt)
     print('done compute probabilities to all images')
 
     
     images = []
+    metadata = []
     for i, idx in enumerate(idxs[0]):
+        df = MyClpModel.df
         fn = df.iloc[idx, df.columns.get_loc('path')]
         try:    
             image = Image.open(fn)
@@ -63,12 +111,11 @@ def infer(prompt, img_cnt):
             print(f'Could not open the image {fn}')
             print(f'The error was: {str(e)}')
         images.append(image)
-        print(fn)
-        # images.append(str(fn))
-        # images.append(str(probs[0][i]))
+        metad = (str(fn),str(probs[0][i]))
+        print(metad)
+        metadata.append(metad)
     print('done reading the images')
-    return images
-
+    return images #, metadata
 
     
     
@@ -154,6 +201,7 @@ css = """
             font-size: 115%;
         }
 """
+MyClpModel = ClpModel()
 
 block = gr.Blocks(css=css)
 
@@ -204,44 +252,48 @@ with block:
                   <rect x="23" y="69" width="23" height="23" fill="black"></rect>
                 </svg>
                <h1 style="font-weight: 900; margin-bottom: 7px;">
-                  Semantic Image Search v.3 [with filenames]
+                  Semantic Medical Image Search
                 </h1>
               </div>
               <p style="margin-bottom: 20px;">
-                HELICS 2022
-                
+                Search images of skin diseases using natural language. The image database has only ~5k images for test purposes without any text or keywords. It supports 68 languages. Email: haider.alwasiti@helsinki.fi              
               </p>
             </div>
         """
     )
     with gr.Group():
         with gr.Box():
-            with gr.Row().style(mobile_collapse=False, equal_height=True):
-                text = gr.Textbox(
-                    label="Enter your prompt",
-                    show_label=False,
-                    max_lines=1,
-                    placeholder="Enter your prompt",
-                ).style(
-                    border=(True, False, True, True),
-                    rounded=(True, False, False, True),
-                    container=False,
-                )
-                btn = gr.Button("Find image").style(
-                    margin=False,
-                    rounded=(False, True, True, False),
-                )
+            with gr.Box():     
+                with gr.Row().style(mobile_collapse=False, equal_height=True):
+                    text = gr.Textbox(
+                        label="Enter your prompt",
+                        show_label=False,
+                        max_lines=1,
+                        placeholder="Enter your prompt",
+                    ).style(
+                        border=(True, False, True, True),
+                        rounded=(True, False, False, True),
+                        container=False,
+                    )
+                    btn = gr.Button("Find image").style(
+                        margin=False,
+                        rounded=(False, True, True, False),
+                    )
+            multiling_checkbox = gr.Checkbox(label="Multilingual (68 languages)", value=True, interactive=True) 
 
         gallery = gr.Gallery(
             label="images", show_label=False, elem_id="gallery"
         ).style(grid=(2,6), height="auto")
 
         with gr.Row():
-            img_cnt = gr.Slider(label="Images", minimum=1, maximum=100, value=4, step=1) 
+            img_cnt = gr.Slider(label="Images", minimum=1, maximum=100, value=8, step=1) 
             
        
-        text.submit(infer, inputs=[text, img_cnt], outputs=gallery)
-        btn.click(infer, inputs=[text, img_cnt], outputs=gallery)
+        text.submit(infer, inputs=[text, img_cnt, multiling_checkbox], outputs=gallery)
+        btn.click(infer, inputs=[text, img_cnt, multiling_checkbox], outputs=gallery)
+        # multiling_checkbox.change(load_model_and_emb, inputs=[multiling_checkbox.value], outputs=[])  # checkbox change event listener seems has a bug
+        
+
         # advanced_button.click(
             # None,
             # [],
@@ -276,4 +328,4 @@ with block:
 
 
 ##### in production I should specify the port. Add the arg: server_port = 7862 #####
-block.launch(server_name='0.0.0.0', auth=("hwasiti", "helics"))  # cannot use .queue(max_size=40) with password
+block.launch(server_name='0.0.0.0') #, auth=("hwasiti", "helics"))  # cannot use .queue(max_size=40) with password

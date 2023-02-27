@@ -25,7 +25,6 @@ from math import floor, ceil
 
 import datetime
 from PIL import Image
-import requests
 from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel
 import transformers
 from multilingual_clip import pt_multilingual_clip
@@ -47,10 +46,12 @@ device = torch.device("cpu")
 
 if MULTILING:
     model_name = 'M-CLIP/XLM-Roberta-Large-Vit-L-14'
+    img_emb_from_model = 'openai/clip-vit-large-patch14'
 else:
     model_name = "openai/clip-vit-base-patch32"   # preconfigured with image size = 224: https://huggingface.co/openai/clip-vit-base-patch32/blob/main/preprocessor_config.json
     # model_name = "openai/clip-vit-large-patch14-336"  # preconfigured with image size = 336: https://huggingface.co/openai/clip-vit-large-patch14-336/blob/main/preprocessor_config.json
-
+    img_emb_from_model = model_name
+    
 # Load Model & Tokenizer
 if MULTILING:
     model = pt_multilingual_clip.MultilingualCLIP.from_pretrained(model_name)
@@ -60,7 +61,8 @@ else:
     processor = CLIPProcessor.from_pretrained(model_name)
 model.to(device)
 
-df = pd.read_pickle(str(path).replace('/', '-')+'.pickle')
+fname = str(path).replace('/', '-') + '_' + img_emb_from_model.split('/')[-1]
+df = pd.read_pickle(fname+'.pickle')
 img_embs = torch.stack(df.features.values.tolist())[:, -1, :].t().to(device)
 logit_scale = model.logit_scale.exp() if not MULTILING else torch.tensor(100., dtype=torch.float32).to(device)
 
@@ -119,12 +121,13 @@ def show_images(images, grid_size, page, metadata):
         cols = st.columns(grid_size)
         last_x = n_images_to_show - (last_y - 1) * grid_size
         for x in range(last_x):
-            image = images[(page - 1) * n_grid_images + y * grid_size + x]
-            if image.mode in ("RGBA", "P"):
-                image = image.convert('RGB')  # discard the alpha channel
-            cols[x].image(image, use_column_width=True)
+            seq = (page - 1) * n_grid_images + y * grid_size + x
+            image = images[seq]
+            # if image.mode in ("RGBA", "P"):
+            #     image = image.convert('RGB')  # discard the alpha channel
+            cols[x].image(image, use_column_width=True, output_format='JPEG' )
             cols[x].markdown(
-                '**' + metadata[x][0].split('/')[-1] + '**'  + ' (' + metadata[x][1] + ')'
+                '**' + metadata[seq][0].split('/')[-1] + '**'  + ' (' + metadata[seq][1] + ')'
             )
             # cols[x].dataframe(df_filtered[(df_filtered.filename == img_name)])
                 

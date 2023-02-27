@@ -12,6 +12,11 @@
 # conda install -c huggingface transformers==4.14.1 tokenizers==0.10.3 see:
 # https://discuss.huggingface.co/t/importing-tokenizers-version-0-10-3-fails-due-to-openssl/17820/3
 # pip install streamlit
+# pip install multilingual-clip
+
+### Multilingial CLIP model:
+# https://huggingface.co/M-CLIP/XLM-Roberta-Large-Vit-L-14
+# pip install transformers==4.8  #### this version or older is important to avoid an error when loading the model
 
 import os
 import streamlit as st
@@ -22,6 +27,8 @@ import datetime
 from PIL import Image
 import requests
 from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel
+import transformers
+from multilingual_clip import pt_multilingual_clip
 import torch
 from torch import autocast
 import glob
@@ -32,15 +39,30 @@ import numpy as np
 from  tqdm import tqdm
 tqdm.pandas()
 
-path = Path('images')
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+MULTILING = True
 
-model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+path = Path('images')
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   # There is a bug when using gpu: tensors should be on the same device not on cuda:0 and cpu
+device = torch.device("cpu")
+
+if MULTILING:
+    model_name = 'M-CLIP/XLM-Roberta-Large-Vit-L-14'
+else:
+    model_name = "openai/clip-vit-base-patch32"   # preconfigured with image size = 224: https://huggingface.co/openai/clip-vit-base-patch32/blob/main/preprocessor_config.json
+    # model_name = "openai/clip-vit-large-patch14-336"  # preconfigured with image size = 336: https://huggingface.co/openai/clip-vit-large-patch14-336/blob/main/preprocessor_config.json
+
+# Load Model & Tokenizer
+if MULTILING:
+    model = pt_multilingual_clip.MultilingualCLIP.from_pretrained(model_name)
+    processor = transformers.AutoTokenizer.from_pretrained(model_name)
+else:
+    model = CLIPModel.from_pretrained(model_name)
+    processor = CLIPProcessor.from_pretrained(model_name)
 model.to(device)
-processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
 df = pd.read_pickle(str(path).replace('/', '-')+'.pickle')
 img_embs = torch.stack(df.features.values.tolist())[:, -1, :].t().to(device)
-logit_scale = model.logit_scale.exp()
+logit_scale = model.logit_scale.exp() if not MULTILING else torch.tensor(100., dtype=torch.float32).to(device)
 
 def compute_probs_and_sort(text_embeds, n):
     preds = torch.matmul(text_embeds.detach(), img_embs) * logit_scale.detach()  # compute cosine similarity * 100 (100 is perfectly text matched to image)
@@ -56,8 +78,12 @@ def compute_probs_and_sort(text_embeds, n):
 
 
 def infer(prompt, img_cnt):
-    input_text = processor(text=[prompt], return_tensors="pt", padding=True).to(device)
-    output_text_features = model.get_text_features(**input_text)
+    # input_text = processor(text=[prompt], return_tensors="pt", padding=True).to(device)
+    if MULTILING:
+        output_text_features = model.forward([prompt], processor)
+    else:
+        input_text = processor(text=[prompt], return_tensors="pt", padding=True).to(device)
+        output_text_features = model.get_text_features(**input_text)
     text_embeds = output_text_features / output_text_features.norm(p=2, dim=-1, keepdim=True)  
     probs, idxs = compute_probs_and_sort(text_embeds, img_cnt)
     print('done compute probabilities to all images')
@@ -116,7 +142,7 @@ def main():
     st.write("")
 
     st.sidebar.header("Search")
-    search_query = st.sidebar.text_input('Write search query and hit enter', value='') #, label_visibility='hidden')
+    search_query = st.sidebar.text_input('Write a query in the search box and hit enter', value='') #, label_visibility='hidden')
 
     st.sidebar.header("Grid size")
     grid_size = st.sidebar.slider('', 1, 8, 3, label_visibility='hidden')

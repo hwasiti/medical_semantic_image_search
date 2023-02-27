@@ -1,8 +1,16 @@
+
+####### Install dependencies #######
+# pip install spacy ftfy==4.4.3
+# python -m spacy download en
+# conda install -c huggingface transformers==4.14.1 tokenizers==0.10.3 see:
+# https://discuss.huggingface.co/t/importing-tokenizers-version-0-10-3-fails-due-to-openssl/17820/3
+
 import datetime
 import gradio as gr
 
 from PIL import Image
 import requests
+
 from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel, CLIPTextModel
 import torch
 from torch import autocast
@@ -14,7 +22,7 @@ import numpy as np
 from  tqdm import tqdm
 tqdm.pandas()
 
-path = Path('images/philippines')
+path = Path('images')
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")

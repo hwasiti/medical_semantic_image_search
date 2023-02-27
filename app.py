@@ -4,6 +4,7 @@
 # python -m spacy download en
 # conda install -c huggingface transformers==4.14.1 tokenizers==0.10.3 see:
 # https://discuss.huggingface.co/t/importing-tokenizers-version-0-10-3-fails-due-to-openssl/17820/3
+# pip install gradio
 
 import datetime
 import gradio as gr
@@ -45,11 +46,11 @@ def compute_probs_and_sort(text_embeds, n):
     return probs, idxs
 
 
-def infer(prompt, samples):
+def infer(prompt, img_cnt):
     input_text = processor(text=[prompt], return_tensors="pt", padding=True).to(device)
     output_text_features = model.get_text_features(**input_text)
     text_embeds = output_text_features / output_text_features.norm(p=2, dim=-1, keepdim=True)  
-    probs, idxs = compute_probs_and_sort(text_embeds, samples)
+    probs, idxs = compute_probs_and_sort(text_embeds, img_cnt)
     print('done compute probabilities to all images')
 
     
@@ -236,11 +237,11 @@ with block:
         ).style(grid=(2,6), height="auto")
 
         with gr.Row():
-            samples = gr.Slider(label="Images", minimum=1, maximum=100, value=4, step=1) 
+            img_cnt = gr.Slider(label="Images", minimum=1, maximum=100, value=4, step=1) 
             
        
-        text.submit(infer, inputs=[text, samples], outputs=gallery)
-        btn.click(infer, inputs=[text, samples], outputs=gallery)
+        text.submit(infer, inputs=[text, img_cnt], outputs=gallery)
+        btn.click(infer, inputs=[text, img_cnt], outputs=gallery)
         # advanced_button.click(
             # None,
             # [],

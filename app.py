@@ -308,14 +308,14 @@ with block:
         # Nice code example: https://huggingface.co/spaces/hysts/sample-008
         examples = [
             ['English', 'hands with rash'], 
-            ['Finnish', 'jaloissa ihottuma'],
-            ['Swedish', 'buken med urtikaria'], 
-            ['Swedish', 'svullna ögon'],
+            ['Finnish (skin rash on legs)', 'ihottuma jaloissa'],
+            ['Swedish (abdomen with urticaria)', 'buken med urtikaria'], 
+            ['Swedish (swollen eyes)', 'svullna ögon'],
             ['English', 'nail fungal infection'], 
-            ['Finnish', 'suu auki'],
-            ['Arabic', 'عدوى الجلد البكتيرية'], 
-            ['English', 'tattoo or marks on the skin'],
-            ['English', 'circular patches']
+            ['Finnish (opened mouth)', 'suu auki'],
+            ['Arabic (skin bacterial infection)', 'عدوى الجلد البكتيرية'], 
+            ['Greek (tattoo or marks on the skin)', 'τατουάζ ή σημάδια στο δέρμα'],
+            ['Japanese (circular patches)', '円形パッチ']
             ]
         
         # Just a way to receive the language cols from the examples

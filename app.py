@@ -23,6 +23,7 @@ import torch
 from pathlib import Path
 import pandas as pd
 from  tqdm import tqdm
+from functools import partial
 tqdm.pandas()
 
 # global last_multiling_chkbx, multiling
@@ -84,7 +85,16 @@ def compute_probs_and_sort(text_embeds, n):
 
 
 def infer(prompt, img_cnt, chkbx):
-    multiling = chkbx #.value
+    if type(chkbx) != bool:
+        multiling = chkbx.value
+    else:
+        multiling = chkbx
+    
+    if type(img_cnt) != int:
+        image_count = img_cnt.value
+    else:
+        image_count = img_cnt
+
     if multiling != MyClpModel.last_multiling_chkbx:
         MyClpModel.load_model_and_emb(multiling)
         # last_multiling_chkbx = multiling
@@ -96,7 +106,7 @@ def infer(prompt, img_cnt, chkbx):
         input_text = MyClpModel.processor(text=[prompt], return_tensors="pt", padding=True).to(device)
         output_text_features = MyClpModel.model.get_text_features(**input_text)
     text_embeds = output_text_features / output_text_features.norm(p=2, dim=-1, keepdim=True)  
-    probs, idxs = compute_probs_and_sort(text_embeds, img_cnt)
+    probs, idxs = compute_probs_and_sort(text_embeds, image_count)
     print('done compute probabilities to all images')
 
     
@@ -117,7 +127,7 @@ def infer(prompt, img_cnt, chkbx):
         metadata.append(metad)
         images_metadata.append((image, metad))
     print('done reading the images')
-    return images_metadata # images #, metadata
+    return  images  # images_metadata # https://github.com/gradio-app/gradio/pull/2284
 
     
     
@@ -258,7 +268,7 @@ with block:
                 </h1>
               </div>
               <p style="margin-bottom: 20px;">
-                Search images of skin diseases using natural language. The image database has only ~5k images for test purposes without any text or keywords. It supports 68 languages. Email: haider.alwasiti@helsinki.fi              
+                Search images of skin diseases using natural language                
               </p>
             </div>
         """
@@ -289,11 +299,55 @@ with block:
 
         with gr.Row():
             img_cnt = gr.Slider(label="Images", minimum=1, maximum=100, value=8, step=1) 
-            
        
         text.submit(infer, inputs=[text, img_cnt, multiling_checkbox], outputs=gallery)
         btn.click(infer, inputs=[text, img_cnt, multiling_checkbox], outputs=gallery)
         # multiling_checkbox.change(load_model_and_emb, inputs=[multiling_checkbox.value], outputs=[])  # checkbox change event listener seems has a bug
+        
+        # Example inputs
+        # Nice code example: https://huggingface.co/spaces/hysts/sample-008
+        examples = [
+            ['English', 'hands with rash'], 
+            ['Finnish', 'jaloissa ihottuma'],
+            ['Swedish', 'buken med urtikaria'], 
+            ['Swedish', 'svullna ögon'],
+            ['English', 'nail fungal infection'], 
+            ['Finnish', 'suu auki'],
+            ['Arabic', 'عدوى الجلد البكتيرية'], 
+            ['English', 'tattoo or marks on the skin'],
+            ['English', 'circular patches']
+            ]
+        
+        # Just a way to receive the language cols from the examples
+        text_dummy = gr.Textbox(
+                        label="Language",
+                        show_label=False,
+                        max_lines=1,
+                        placeholder="",
+                        visible=False
+                    )
+
+
+        def partial_infer(text_dummy, text):
+            return infer(text, img_cnt=img_cnt, chkbx=multiling_checkbox)
+
+        with gr.Row():
+            with gr.Box():
+                gr.Examples(examples=examples, inputs=[text_dummy , text], examples_per_page=10,
+                            fn = partial_infer, outputs=gallery, run_on_click=False, cache_examples=False)  # No cache so that the examples can be updated and the model can be rerun if the checkbox is changed
+
+                    
+        with gr.Row():
+            with gr.Box():
+                gr.Markdown(''' 
+                - **TODO:**<br />
+                    [   ] Add more images to the database.<br />
+                    [   ] Add a threshold to filter out unrelated images.<br />
+                - The model lists the nearest images to the given prompt starting from top left to bottom right row-wise. Even if the prompt is not in English, the multi-lingual model will be able to search for the nearest images when the multilingual option is enabled.  
+                - The database has only ~5k images for test purposes without any text or keywords. If no images are found, the model will try to search for the nearest images in the database. Due to the small size of the database, the model may not find any related images but it will still return the nearest images in the database. 
+                - **Multilingual DL model supports 68 languages:** Afrikaans, Albanian, Amharic, Arabic, Armenian, Azerbaijani, Bengali, Bosnian, Bulgarian, Catalan, Chinese Simplified, Chinese Traditional, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, Georgian, German, Greek, Gujarati, Haitian, Hausa, Hebrew, Hindi, Hungarian, Icelandic, Indonesian, Italian, Japanese, Kannada, Kazakh, Korean, Latvian, Lithuanian, Macedonian, Malay, Malayalam, Maltese, Mongolian, Norwegian, Persian, Polish, Pushto, Portuguese, Romanian, Russian, Serbian, Sinhala, Slovak, Slovenian, Somali, Spanish, Swahili, Swedish, Tagalog, Tamil, Telugu, Thai, Turkish, Ukrainian, Urdu, Uzbek, Vietnamese, Welsh
+                - **Contact for more information:** Haider Alwasiti at: [haider.alwasiti@helsinki.fi](mailto:haider.alwasiti@helsinki.fi)
+                            ''')
         
 
         # advanced_button.click(

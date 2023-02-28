@@ -102,6 +102,7 @@ def infer(prompt, img_cnt, chkbx):
     
     images = []
     metadata = []
+    images_metadata = []
     for i, idx in enumerate(idxs[0]):
         df = MyClpModel.df
         fn = df.iloc[idx, df.columns.get_loc('path')]
@@ -111,11 +112,12 @@ def infer(prompt, img_cnt, chkbx):
             print(f'Could not open the image {fn}')
             print(f'The error was: {str(e)}')
         images.append(image)
-        metad = (str(fn),str(probs[0][i]))
+        metad = f'({probs[0][i]}) {fn}'
         print(metad)
         metadata.append(metad)
+        images_metadata.append((image, metad))
     print('done reading the images')
-    return images #, metadata
+    return images_metadata # images #, metadata
 
     
     

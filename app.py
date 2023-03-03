@@ -132,6 +132,7 @@ def infer(prompt, img_cnt, chkbx):
     
     
 css = """
+        footer {visibility: hidden}
         .gradio-container {
             font-family: 'IBM Plex Sans', sans-serif;
         }
@@ -384,4 +385,4 @@ with block:
 
 
 ##### in production I should specify the port. Add the arg: server_port = 7862 #####
-block.launch(server_name='0.0.0.0') #, auth=("hwasiti", "helics"))  # cannot use .queue(max_size=40) with password
+block.launch(server_name='0.0.0.0', server_port=7860) #, auth=("hwasiti", "helics"))  # cannot use .queue(max_size=40) with password

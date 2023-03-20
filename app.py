@@ -385,4 +385,4 @@ with block:
 
 
 ##### in production I should specify the port. Add the arg: server_port = 7862 #####
-block.launch(server_name='0.0.0.0', server_port=7860) #, auth=("hwasiti", "helics"))  # cannot use .queue(max_size=40) with password
+block.queue(max_size=40).launch(server_name='0.0.0.0', server_port=7860) 

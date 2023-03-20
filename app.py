@@ -371,7 +371,7 @@ with block:
 # while True:  
 #     cnt = 0
 #     try:
-#         block.launch(server_name='0.0.0.0', server_port = 7862, auth=("hwasiti", "helics"))  # cannot use .queue(max_size=40) with password
+#         block.launch(server_name='0.0.0.0', server_port = 7862, auth=("user", "pass"))  # cannot use .queue(max_size=40) with password
 #     except KeyboardInterrupt:
 #         print('Interrupted by keyboard')
 #     except Exception as e:
